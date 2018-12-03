@@ -1,0 +1,290 @@
+---
+title: "Distributed Generation in Brazil"
+author: "Andre Moura Gomes da Costa"
+date: "November 12, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This website contains a briev exploration report about the distributed generation (DG) on Brazil. Two aspects are shown: The growth of DG over time and the situation over the country area.
+
+### Data obtention
+
+Data was obtained from the ANEEL (Brazilian National Agency of Electric Energy) DG register database, available in the [ANEEL website](http://www.aneel.gov.br/outorgas/geracao/-/asset_publisher/mJhnKIi7qcJG/content/registro-de-central-geradora-de-capacidade-reduzida/655808?inheritRedirect=false&redirect=http%3A%2F%2Fwww.aneel.gov.br%2Foutorgas%2Fgeracao%3Fp_p_id%3D101_INSTANCE_mJhnKIi7qcJG%26p_p_lifecycle%3D0%26p_p_state%3Dnormal%26p_p_mode%3Dview%26p_p_col_id%3Dcolumn-2%26p_p_col_pos%3D1%26p_p_col_count%3D2)
+
+The site was scraped with a function displayed in the end of this website 
+
+### Evolution
+
+The following figures show the growth of PV on Brasil. It can be seen that it has presented an exponential growth, both for units installed and for power installed. Regarding units installed, a change on the growth rate can be seen on June of 2016, when regulations have changed.
+
+```{r , echo=FALSE, warning=F, fig.width=6, fig.height=3, message=F}
+library(leaflet)
+library(dplyr)
+library(lubridate)
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+  library(grid)
+
+  # Make a list from the ... arguments and plotlist
+  plots <- c(list(...), plotlist)
+
+  numPlots = length(plots)
+
+  # If layout is NULL, then use 'cols' to determine layout
+  if (is.null(layout)) {
+    # Make the panel
+    # ncol: Number of columns of plots
+    # nrow: Number of rows needed, calculated from # of cols
+    layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+                    ncol = cols, nrow = ceiling(numPlots/cols))
+  }
+
+ if (numPlots==1) {
+    print(plots[[1]])
+
+  } else {
+    # Set up the page
+    grid.newpage()
+    pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+
+    # Make each plot, in the correct location
+    for (i in 1:numPlots) {
+      # Get the i,j matrix positions of the regions that contain this subplot
+      matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+
+      print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+                                      layout.pos.col = matchidx$col))
+    }
+  }
+}
+
+
+load(file="latlong.RData")
+```
+
+```{r , echo=FALSE, warning=F, fig.width=6, fig.height=3, message=F}
+
+LatLongSol<- mutate(filter(LatLong,fonte =="Radiação solar"), 
+                    Date= dmy(data_conexao)) %>%
+     arrange(Date) %>% mutate (count=1:44827, 
+                               dumb=1,
+                               potencia_instalada_k_w=gsub("\\.","",potencia_instalada_k_w),
+                               Pot = as.numeric(gsub(",",".",potencia_instalada_k_w)),
+                             P_cumul=cumsum(Pot))
+
+LatLongSolM <- filter(LatLongSol,Date>ymd("2014/01/01"))%>%
+    mutate(ano=year(Date))%>%
+    group_by(ano) %>%
+    summarise(media=mean(Pot),
+              mediana=median(Pot))
+
+mod1<-lm(data=filter(LatLongSol,Date>ymd("2015/01/01") & 
+                   Date<ymd("2016/07/01") &
+                   fonte =="Radiação solar"),
+   log10(count)~Date)
+
+LatLongSol$mod1<-predict(mod1, newdata = LatLongSol)
+
+mod2<-lm(data=filter(LatLongSol,Date>ymd("2016/07/01") & 
+    #               Date<ymd("2016/06/01") &
+                   fonte =="Radiação solar"),
+   log10(count)~Date)
+LatLongSol$mod2<-predict(mod2, newdata = LatLongSol)
+
+
+library(ggplot2)
+p2<-ggplot(data=filter(LatLongSol,Date>ymd("2014/01/01") ),#&# fonte =="Radiação solar"),
+       aes(x=Date,y=log10(cumsum(dumb))))+
+    geom_line()+
+    theme_light()+
+    ylab(expression(Log[10]))+
+ #   theme(axis.title.y=element_blank(),
+ #       axis.text.y=element_blank())+
+    xlab("Data")+
+    geom_line(aes(y=mod1),col="red",linetype=2)+
+    geom_line(aes(y=mod2),col="blue",linetype=2)
+
+
+
+p1<-ggplot(data=filter(LatLongSol,Date>ymd("2014/01/01") & fonte =="Radiação solar"),
+       aes(x=Date,y=(cumsum(dumb))))+
+    geom_line()+
+    theme_light()+
+    ylab("Total DG Units Installed")+
+  #  geom_area(fill="blue")+
+    xlab("Data")
+
+multiplot(p1, p2, cols=2)
+
+mod2pot<-lm(data=filter(LatLongSol,Date>ymd("2016/07/01")),
+   log10(P_cumul)~(Date))
+
+LatLongSol$mod2pot<-predict(mod2pot, newdata = LatLongSol)
+
+p2<-ggplot(data=filter(LatLongSol,Date>ymd("2014/01/01")),
+    aes(x=Date,y=log10(P_cumul)))+
+    geom_line()+
+    theme_light()+
+    ylab(expression(Log[10]))+
+ #   theme(axis.title.y=element_blank(),
+ #       axis.text.y=element_blank())+
+    xlab("Data")+
+    geom_line(aes(y=mod2pot),col="red",linetype=2)
+
+p1<-ggplot(data=filter(LatLongSol,Date>ymd("2014/01/01")),
+       aes(x=Date,y=P_cumul))+
+    geom_line()+
+    theme_light()+
+    ylab("Total DG Installed power")+
+  #  geom_area(fill="blue")+
+    xlab("Data")
+
+multiplot(p1, p2, cols=2)
+
+p1<-ggplot(data=LatLongSolM,
+       aes(x=ano,y=media))+
+    geom_line()+
+    theme_light()+ 
+  #  geom_line(aes(x=ano,y=mediana),col='blue')+
+    ylab("Potência Instalada Média")+
+  #  geom_area(fill="blue")+
+    xlab("Ano")
+
+p2<-ggplot(data=LatLongSolM,
+       aes(x=ano,y=mediana))+
+    geom_line()+
+    theme_light()+ 
+#    geom_line(aes(x=ano,y=mediana),col='blue')+
+    ylab("Mediana da Potência Instalada")+
+  #  geom_area(fill="blue")+
+    xlab("Ano")
+
+#multiplot(p1, p2, cols=2)
+
+```
+
+### Location
+
+The following maps show the units installed over the country and, the total power installed by country.
+
+```{r , echo=F, , fig.width=6, fig.height=3, message=F}
+my_map <- LatLong %>% leaflet()%>%
+   addTiles()%>%
+    addMarkers(lat=LatLong$lat,
+               lng=LatLong$lng,
+               clusterOptions=markerClusterOptions())
+my_map
+
+LatLongCity <-LatLong %>% group_by(uf) %>% 
+    summarise(Pot=sum(Pot,na.rm=T), lat=median(lat,na.rm=T),lng=median(lng,na.rm=T))
+
+my_map <- LatLongCity %>% leaflet()%>%
+   addTiles()%>%
+    addCircles(lat=~lat,
+               lng=~lng,
+               radius = ~sqrt(Pot)*1000, 
+               weight = 1,
+               popup = ~uf)
+my_map
+```
+```
+
+
+
+```{r function}
+get_power_info <- function(pagina = 1L, acao = "buscar", login = "",
+                           nom_pessoa = "", id_agente = "", dat_conexao_inicio = "",
+                           dat_conexao_fim = "") {
+    
+    # we need alot of packages to make this work
+    
+    suppressPackageStartupMessages({
+        require("httr", quietly = TRUE, warn.conflicts = FALSE)
+        require("xml2", quietly = TRUE, warn.conflicts = FALSE)
+        require("rvest", quietly = TRUE, warn.conflicts = FALSE)
+        require("janitor", quietly = TRUE, warn.conflicts = FALSE)
+        require("stringi", quietly = TRUE, warn.conflicts = FALSE)
+        require("dplyr", quietly = TRUE, warn.conflicts = FALSE)
+    })
+    
+    # get the page like a browser
+    
+    httr::GET(
+        url = "http://www2.aneel.gov.br/scg/gd/VerGD.asp",
+        query = list(
+            pagina = as.character(as.integer(pagina)),
+            acao = acao,
+            login = login,
+            NomPessoa = nom_pessoa, 
+            IdAgente = id_agente,
+            DatConexaoInicio = dat_conexao_inicio,
+            DatConexaoFim = dat_conexao_fim
+        )
+    ) -> res
+    
+    httr::stop_for_status(res)
+    
+    # DON'T PARSE IT YET
+    
+    out <- httr::content(res, as = "text")
+    
+    # Remove beginning & trailing whitespace from lines
+    
+    l <- stri_trim_both(stri_split_lines(out)[[1]])
+    
+    # Now, remove all form-component lines and all blank lines
+    
+    l[-c(
+        which(grepl("<form", l, fixed = TRUE)), 
+        which(grepl("<input", l, fixed = TRUE)),
+        which(l == "")
+    )] -> l
+    
+    # Get the indices of all the <td> tags that should have a <tr> before them but dont
+    
+    to_fix <- c()
+    for (i in 1:(length(l)-1)) {
+        if (all(c(
+            grepl("/tr", l[i]), grepl("td", l[i+1])
+        ))) {
+            to_fix <- c(to_fix, (i+1))
+        }
+        
+    }
+    
+    # Fix them
+    
+    l[to_fix] <- sprintf("<tr>%s", l[to_fix])
+    
+    # NOW WE CAN PARSE IT
+    
+    x <- read_html(paste0(l, collapse="\n"))
+    
+    # Find the table in a less breakable way
+    
+    tabl <- html_nodes(x, xpath=".//table[@class = 'tabelaMaior']/tr/td[contains(., 'UNIDADES')]/../..")
+    
+    # Remove the useless title row that makes html_table() cry
+    
+    xml_remove(html_node(tabl, xpath=".//tr[1]"))
+    
+    # Remove the bottom pagination row that makes html_table() cry
+    
+    xml_remove(html_node(tabl, xpath=".//tr/td[@colspan = '20']/.."))
+    
+    # Extract the table with better column names
+    
+    xdat <- html_table(tabl, header=TRUE, trim=TRUE)[[1]] 
+    xdat <- janitor::clean_names(xdat)
+    xdat <- dplyr::tbl_df(xdat)
+    
+    xdat
+    
+}
+
+```
